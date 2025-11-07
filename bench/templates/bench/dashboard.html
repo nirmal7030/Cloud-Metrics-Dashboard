@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Security Metrics Dashboard</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight">
+          Security Metrics Dashboard
+        </h1>
+        <p class="text-slate-400 text-sm">
+          Monitoring and analyzing novel cloud security metrics across CI/CD pipelines.
+        </p>
+      </div>
+
+      <!-- CI/CD dropdown -->
+      <div class="flex items-center gap-2">
+        <label for="cicd-select" class="text-sm text-slate-300">Pipeline:</label>
+        <select
+          id="cicd-select"
+          class="bg-slate-800 border border-slate-700 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="github">GitHub Actions</option>
+          <option value="jenkins">Jenkins</option>
+          <option value="codepipeline">AWS CodePipeline</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <!-- CI/CD overview -->
+    <section class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-lg font-semibold" id="cicd-title">GitHub Actions Pipeline</h2>
+        <span class="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/40">
+          CI/CD: Active
+        </span>
+      </div>
+      <p id="cicd-description" class="text-sm text-slate-300">
+        GitHub Actions automates the build, test, and deployment of Dockerized security dashboards to AWS EC2.
+      </p>
+      <div class="grid grid-cols-3 gap-3 mt-4 text-xs text-slate-300">
+        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+          <p class="font-semibold mb-1">GitHub Actions</p>
+          <p>Cloud-native workflow automation integrating build, test, and deploy stages directly with AWS ECR & EC2.</p>
+        </div>
+        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+          <p class="font-semibold mb-1">Jenkins</p>
+          <p>Custom pipeline using Jenkinsfile to orchestrate CI/CD tasks, trigger Docker builds, and manage deployments.</p>
+        </div>
+        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+          <p class="font-semibold mb-1">AWS CodePipeline</p>
+          <p>Fully managed AWS pipeline integrating CodeCommit, CodeBuild, and CodeDeploy for continuous delivery.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Metrics Summary + Glossary -->
+    <section class="space-y-4">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-semibold">Metric Summary</h2>
+        <button id="download-csv" class="bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold px-3 py-2 rounded-lg">
+          ⬇️ Download Metrics (CSV)
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3" id="summary-cards">
+        <!-- Summary cards filled by JS -->
+      </div>
+
+      <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+        <h3 class="font-semibold mb-2 text-slate-200">Metrics Glossary</h3>
+        <ul class="text-sm text-slate-400 list-disc list-inside grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+          <li><strong>LCE</strong> – Latency & Connectivity Efficiency: network response reliability across requests.</li>
+          <li><strong>PRT</strong> – Processing Response Time: average time for the system to respond to operations.</li>
+          <li><strong>SMO</strong> – System Monitoring Overhead: CPU/memory usage due to security monitoring processes.</li>
+          <li><strong>DEPT</strong> – Deployment Efficiency Time: average duration for CI/CD build & deployment.</li>
+          <li><strong>CLBC</strong> – Cloud Load Balancer Consistency: load distribution and uptime efficiency metric.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Chart + Table -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <!-- Chart -->
+      <div class="lg:col-span-2 bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-lg font-semibold">Metric Trend</h2>
+            <p class="text-xs text-slate-400">Time-series visualization of selected metric values.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <label for="metric-select" class="text-xs text-slate-300">Select metric:</label>
+            <select
+              id="metric-select"
+              class="bg-slate-950 border border-slate-800 text-xs rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="value">Overall Value</option>
+              <option value="lce">LCE</option>
+              <option value="prt">PRT</option>
+              <option value="smo">SMO</option>
+              <option value="dept">DEPT</option>
+              <option value="clbc">CLBC</option>
+            </select>
+          </div>
+        </div>
+        <div class="h-72">
+          <canvas id="metricsChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 overflow-hidden">
+        <h2 class="text-lg font-semibold mb-3">Raw Metrics</h2>
+        <div class="max-h-72 overflow-auto">
+          <table class="min-w-full text-xs text-left">
+            <thead class="sticky top-0 bg-slate-900">
+              <tr class="border-b border-slate-800 text-slate-400">
+                <th class="px-2 py-1">Name</th>
+                <th class="px-2 py-1 text-right">Value</th>
+                <th class="px-2 py-1 text-right">LCE</th>
+                <th class="px-2 py-1 text-right">PRT</th>
+                <th class="px-2 py-1 text-right">SMO</th>
+                <th class="px-2 py-1 text-right">DEPT</th>
+                <th class="px-2 py-1 text-right">CLBC</th>
+                <th class="px-2 py-1">Created</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ---------- CI/CD DESCRIPTIONS ----------
+    const cicdConfigs = {
+      github: {
+        title: "GitHub Actions Pipeline",
+        description: "Automates build, test, and deploy of Dockerized Django app to EC2 via ECR integration.",
+      },
+      jenkins: {
+        title: "Jenkins Pipeline",
+        description: "Declarative pipeline with custom stages to build, test, push image to ECR, and deploy on EC2.",
+      },
+      codepipeline: {
+        title: "AWS CodePipeline",
+        description: "AWS-native CI/CD integrating CodeCommit, CodeBuild, and CodeDeploy for automated delivery.",
+      },
+    };
+
+    const cicdSelect = document.getElementById("cicd-select");
+    const cicdTitle = document.getElementById("cicd-title");
+    const cicdDescription = document.getElementById("cicd-description");
+
+    cicdSelect.addEventListener("change", (e) => {
+      const config = cicdConfigs[e.target.value];
+      cicdTitle.textContent = config.title;
+      cicdDescription.textContent = config.description;
+    });
+
+    // ---------- METRICS LOGIC ----------
+    let metricsData = [];
+    let chartInstance = null;
+
+    async function fetchMetrics() {
+      try {
+        const response = await fetch("/api/metrics/data/");
+        const data = await response.json();
+        metricsData = data || [];
+        renderSummaryCards();
+        renderMetricsTable();
+        renderChart();
+      } catch (error) {
+        console.error("Error fetching metrics:", error);
+      }
+    }
+
+    function calculateSummary() {
+      if (!metricsData.length) return { count: 0, avgValue: 0, avgLce: 0, avgPrt: 0, avgSmo: 0, avgDept: 0, avgClbc: 0 };
+      const total = metricsData.reduce((a, m) => ({
+        value: a.value + (m.value || 0),
+        lce: a.lce + (m.lce || 0),
+        prt: a.prt + (m.prt || 0),
+        smo: a.smo + (m.smo || 0),
+        dept: a.dept + (m.dept || 0),
+        clbc: a.clbc + (m.clbc || 0)
+      }), { value: 0, lce: 0, prt: 0, smo: 0, dept: 0, clbc: 0 });
+      const n = metricsData.length;
+      return {
+        count: n,
+        avgValue: total.value / n,
+        avgLce: total.lce / n,
+        avgPrt: total.prt / n,
+        avgSmo: total.smo / n,
+        avgDept: total.dept / n,
+        avgClbc: total.clbc / n,
+      };
+    }
+
+    function renderSummaryCards() {
+      const s = calculateSummary();
+      const cards = [
+        { label: "Total Records", value: s.count },
+        { label: "Avg Value", value: s.avgValue.toFixed(2) },
+        { label: "Avg LCE", value: s.avgLce.toFixed(2) },
+        { label: "Avg PRT", value: s.avgPrt.toFixed(2) },
+        { label: "Avg SMO", value: s.avgSmo.toFixed(2) },
+        { label: "Avg DEPT", value: s.avgDept.toFixed(2) },
+      ];
+      const container = document.getElementById("summary-cards");
+      container.innerHTML = cards.map(
+        c => `<div class="bg-slate-900/70 border border-slate-800 rounded-2xl px-3 py-3 text-center">
+                <p class="text-[11px] text-slate-400">${c.label}</p>
+                <p class="text-lg font-semibold mt-1">${c.value}</p>
+              </div>`
+      ).join("");
+    }
+
+    function renderMetricsTable() {
+      const tbody = document.getElementById("metrics-table-body");
+      tbody.innerHTML = metricsData.map(m => `
+        <tr class="border-b border-slate-800/60 hover:bg-slate-800/40">
+          <td class="px-2 py-1">${m.name}</td>
+          <td class="px-2 py-1 text-right">${m.value.toFixed(2)}</td>
+          <td class="px-2 py-1 text-right">${m.lce.toFixed(2)}</td>
+          <td class="px-2 py-1 text-right">${m.prt.toFixed(2)}</td>
+          <td class="px-2 py-1 text-right">${m.smo.toFixed(2)}</td>
+          <td class="px-2 py-1 text-right">${m.dept.toFixed(2)}</td>
+          <td class="px-2 py-1 text-right">${m.clbc.toFixed(2)}</td>
+          <td class="px-2 py-1 text-slate-400">${new Date(m.created_at).toLocaleString()}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="8" class="text-center text-slate-400 py-3">No data yet.</td></tr>`;
+    }
+
+    function renderChart() {
+      const metric = document.getElementById("metric-select").value;
+      const ctx = document.getElementById("metricsChart").getContext("2d");
+      const sorted = [...metricsData].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const labels = sorted.map(m => new Date(m.created_at).toLocaleTimeString());
+      const values = sorted.map(m => m[metric] || 0);
+      if (chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(ctx, {
+        type: "line",
+        data: { labels, datasets: [{ label: metric.toUpperCase(), data: values, borderWidth: 2, tension: 0.3 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { x: { ticks: { color: "#9ca3af" } }, y: { ticks: { color: "#9ca3af" } } },
+          plugins: { legend: { labels: { color: "#e5e7eb" } } },
+        },
+      });
+    }
+
+    // ---------- DOWNLOAD METRICS AS CSV ----------
+    document.getElementById("download-csv").addEventListener("click", () => {
+      if (!metricsData.length) return alert("No metrics available to download!");
+      const headers = ["Name","Value","LCE","PRT","SMO","DEPT","CLBC","Created"];
+      const rows = metricsData.map(m => [
+        m.name, m.value, m.lce, m.prt, m.smo, m.dept, m.clbc, new Date(m.created_at).toLocaleString()
+      ]);
+      const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "metrics_data.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // Initial load
+    fetchMetrics();
+  </script>
+</body>
+</html>
