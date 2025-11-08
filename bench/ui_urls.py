@@ -2,5 +2,6 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path("", views.dashboard_view, name="dashboard"),
+    # Dashboard HTML at the root "/"
+    path("", views.dashboard, name="dashboard"),
 ]

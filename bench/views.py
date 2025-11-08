@@ -9,47 +9,39 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import Metric
 
 
-# -------------------------------
-# UI VIEW – main dashboard page
-# -------------------------------
+# ---------- Dashboard HTML ----------
 def dashboard(request):
-    """
-    Render the security metrics dashboard.
-    Frontend JavaScript will call /api/metrics/data/ to fetch live data.
-    """
+    """Render the main security metrics dashboard."""
     return render(request, "bench/dashboard.html")
 
 
-# -------------------------------
-# API – ingest metrics from CI/CD
-# -------------------------------
+# ---------- API: ingest metrics from CI/CD ----------
 @csrf_exempt
 def api_ingest(request):
     """
     Receive metric data from CI/CD pipeline.
 
-    Expected:
-      - HTTP header:  X-Bench-Key: <BENCH_API_KEY>
-      - JSON body with fields:
-          source, workflow, run_id, run_attempt, branch, commit_sha,
-          lce, prt, smo, dept, clbc, value (optional), notes (optional)
+    Header:
+      X-Bench-Key: <BENCH_API_KEY>
+
+    Body JSON:
+      source, workflow, run_id, run_attempt, branch, commit_sha,
+      lce, prt, smo, dept, clbc, value (optional), notes (optional)
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
-    # Parse JSON
     try:
         payload = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # Simple API key check
     api_key = request.headers.get("X-Bench-Key")
     expected_key = getattr(settings, "BENCH_API_KEY", "")
     if api_key != expected_key:
         return JsonResponse({"error": "Unauthorized"}, status=403)
 
-    # Compute overall value if not provided (simple average of 5 metrics)
+    # overall value (simple average if not provided)
     if "value" in payload and payload["value"] is not None:
         overall_value = float(payload["value"])
     else:
@@ -62,9 +54,7 @@ def api_ingest(request):
         ]
         overall_value = sum(parts) / 5.0 if any(parts) else 0.0
 
-    # Create a Metric row from the CI payload
     Metric.objects.create(
-        # CI/CD context
         source=payload.get("source", "github"),
         workflow=payload.get("workflow", ""),
         run_id=payload.get("run_id", ""),
@@ -72,47 +62,39 @@ def api_ingest(request):
         branch=payload.get("branch", ""),
         commit_sha=payload.get("commit_sha", ""),
 
-        # Display name + description used on dashboard
         name=payload.get(
             "name",
             f"{payload.get('source', 'github').title()} – run {payload.get('run_id', '')}"
         ),
         description=payload.get("notes", ""),
 
-        # Overall value + novel metrics
         value=overall_value,
         lce=payload.get("lce") or 0.0,
         prt=payload.get("prt") or 0.0,
         smo=payload.get("smo") or 0.0,
         dept=payload.get("dept") or 0.0,
         clbc=payload.get("clbc") or 0.0,
-
-        # Free-text notes
         notes=payload.get("notes", ""),
     )
 
     return JsonResponse({"status": "stored"}, status=201)
 
 
-# -------------------------------
-# API – data for dashboard
-# -------------------------------
+# ---------- API: data for dashboard ----------
 def api_metrics_data(request):
     """
     Return latest metrics (optionally filtered by source)
     in the shape your dashboard expects.
 
-    Query params:
-      ?source=github|jenkins|codepipeline (optional)
+    ?source=github|jenkins|codepipeline (optional)
     """
-    source = request.GET.get("source")  # "github", "jenkins", "codepipeline" or None
+    source = request.GET.get("source")
 
     qs = Metric.objects.all()
     if source in ["github", "jenkins", "codepipeline"]:
         qs = qs.filter(source=source)
 
-    # Oldest first for a smooth time-series chart
-    qs = qs.order_by("created_at")
+    qs = qs.order_by("created_at")  # oldest first
 
     rows = [
         {
