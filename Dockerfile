@@ -24,5 +24,5 @@ COPY . /app/
 # Expose port 8000 (internal container port)
 EXPOSE 8000
 
-# Run migrations on container start and launch Gunicorn
+# Run migrations and then start Gunicorn
 CMD ["sh", "-c", "python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:8000"]
