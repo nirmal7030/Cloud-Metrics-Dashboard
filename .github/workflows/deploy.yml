@@ -91,6 +91,9 @@ jobs:
             sudo docker stop metrics-bench || true
             sudo docker rm metrics-bench || true
 
+            # 🔥 Clean up unused Docker data so we don't run out of space
+            sudo docker system prune -af --volumes || true
+
             # Login to ECR
             aws ecr get-login-password --region ${{ env.AWS_REGION }} \
               | sudo docker login --username AWS --password-stdin "$REGISTRY"
@@ -104,7 +107,7 @@ jobs:
       # 🌐 Post live novel metrics to your Django API
       - name: Post novel metrics to app
         env:
-          # 👇 direct URL of your EC2 instance
+          # direct URL of your EC2 instance
           APP_BASE_URL:  http://ec2-98-80-122-141.compute-1.amazonaws.com
           BENCH_API_KEY: ${{ secrets.BENCH_API_KEY }}
           BUILD_DUR:     ${{ needs.test.outputs.build_duration }}
