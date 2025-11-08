@@ -1,18 +1,21 @@
 from django.core.management.base import BaseCommand
-from bench.models import MetricObservation
+from bench.models import Metric
 
 
 class Command(BaseCommand):
-    help = "Seeds the database with example security metrics if empty."
+    help = "Seeds the database with example CI/CD security metrics if empty."
 
     def handle(self, *args, **options):
-        if MetricObservation.objects.exists():
+        # Prevent duplicate seeding
+        if Metric.objects.exists():
             self.stdout.write(self.style.WARNING("Metrics already exist. Skipping seeding."))
             return
 
+        # Predefined metric entries
         sample_data = [
-            MetricObservation(
+            Metric(
                 name="GitHub Actions – Baseline",
+                description="Default GitHub Actions pipeline configuration",
                 value=78,
                 lce=0.82,
                 prt=0.65,
@@ -20,8 +23,9 @@ class Command(BaseCommand):
                 dept=0.55,
                 clbc=0.48,
             ),
-            MetricObservation(
+            Metric(
                 name="GitHub Actions – Hardened",
+                description="Enhanced GitHub Actions with security best practices",
                 value=84,
                 lce=0.88,
                 prt=0.71,
@@ -29,8 +33,9 @@ class Command(BaseCommand):
                 dept=0.61,
                 clbc=0.52,
             ),
-            MetricObservation(
+            Metric(
                 name="Jenkins – Baseline",
+                description="Standard Jenkins pipeline without hardening",
                 value=74,
                 lce=0.79,
                 prt=0.62,
@@ -38,8 +43,9 @@ class Command(BaseCommand):
                 dept=0.53,
                 clbc=0.46,
             ),
-            MetricObservation(
+            Metric(
                 name="Jenkins – Hardened",
+                description="Jenkins pipeline with advanced security controls",
                 value=81,
                 lce=0.86,
                 prt=0.69,
@@ -47,8 +53,9 @@ class Command(BaseCommand):
                 dept=0.59,
                 clbc=0.50,
             ),
-            MetricObservation(
+            Metric(
                 name="AWS CodePipeline – Baseline",
+                description="Default AWS CodePipeline configuration",
                 value=76,
                 lce=0.80,
                 prt=0.64,
@@ -56,8 +63,9 @@ class Command(BaseCommand):
                 dept=0.56,
                 clbc=0.47,
             ),
-            MetricObservation(
+            Metric(
                 name="AWS CodePipeline – Hardened",
+                description="CodePipeline integrated with security and compliance checks",
                 value=88,
                 lce=0.91,
                 prt=0.76,
@@ -67,5 +75,6 @@ class Command(BaseCommand):
             ),
         ]
 
-        MetricObservation.objects.bulk_create(sample_data)
-        self.stdout.write(self.style.SUCCESS("Seeded sample CI/CD security metrics."))
+        # Insert into DB
+        Metric.objects.bulk_create(sample_data)
+        self.stdout.write(self.style.SUCCESS("Seeded sample CI/CD security metrics successfully."))
