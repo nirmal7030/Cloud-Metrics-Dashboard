@@ -14,7 +14,6 @@ jobs:
     name: Stage 1 - Build & Test
     runs-on: ubuntu-latest
 
-    # ✅ expose durations so deploy job can use them
     outputs:
       build_duration: ${{ steps.build_step.outputs.build_duration }}
       test_duration:  ${{ steps.test_step.outputs.test_duration }}
@@ -28,7 +27,6 @@ jobs:
         with:
           python-version: "3.10"
 
-      # ⏱️ Timed install (build step)
       - name: Install dependencies (timed)
         id: build_step
         run: |
@@ -39,7 +37,6 @@ jobs:
           END=$(date +%s)
           echo "build_duration=$((END-START))" >> "$GITHUB_OUTPUT"
 
-      # ⏱️ Timed tests
       - name: Run Django tests (timed)
         id: test_step
         run: |
@@ -52,7 +49,7 @@ jobs:
   deploy:
     name: Stage 2 - Deploy to EC2
     runs-on: ubuntu-latest
-    needs: test  # ✅ deploy runs only if test succeeds
+    needs: test
 
     steps:
       - name: Checkout source
@@ -91,7 +88,7 @@ jobs:
             sudo docker stop metrics-bench || true
             sudo docker rm metrics-bench || true
 
-            # 🔥 Clean up unused Docker data so we don't run out of space
+            # Clean up unused Docker data to avoid disk-full errors
             sudo docker system prune -af --volumes || true
 
             # Login to ECR
@@ -107,7 +104,6 @@ jobs:
       # 🌐 Post live novel metrics to your Django API
       - name: Post novel metrics to app
         env:
-          # direct URL of your EC2 instance
           APP_BASE_URL:  http://ec2-98-80-122-141.compute-1.amazonaws.com
           BENCH_API_KEY: ${{ secrets.BENCH_API_KEY }}
           BUILD_DUR:     ${{ needs.test.outputs.build_duration }}
@@ -120,26 +116,26 @@ jobs:
           echo "Build duration: $BUILD_DUR seconds"
           echo "Test duration:  $TEST_DUR seconds"
 
-          # --- Derive your novel metrics (simple heuristic) ---
+          # Wait for app to be ready on EC2 (health-check loop)
+          echo "Waiting for API to become ready..."
+          for i in {1..10}; do
+            if curl -sSf "$APP_BASE_URL/api/health/" > /dev/null; then
+              echo "API is up ✅"
+              break
+            fi
+            echo "API not ready yet (attempt $i/10), retrying in 5s..."
+            sleep 5
+          done
 
-          # LCE (Layer Cache Efficiency) - higher if build is faster
+          # --- Derive your novel metrics (simple heuristic) ---
           LCE=$(( 100 - BUILD_DUR / 2 ))
           if [ "$LCE" -lt 0 ]; then LCE=0; fi
           if [ "$LCE" -gt 100 ]; then LCE=100; fi
 
-          # PRT (Pipeline Recovery Time) - approximate with test duration for now
           PRT=$TEST_DUR
-
-          # SMO (Secrets Management Overhead) - constant placeholder
           SMO=1
-
-          # DEPT (Dynamic Env Provisioning Time) - tie to test duration for now
           DEPT=$TEST_DUR
-
-          # CLBC (Cross-Layer Build Consistency) - 100 for successful pipeline
           CLBC=100
-
-          # Optional overall score as simple average of LCE & CLBC
           VALUE=$(( (LCE + CLBC) / 2 ))
 
           cat > payload.json <<EOF
