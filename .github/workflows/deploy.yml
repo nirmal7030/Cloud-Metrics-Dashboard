@@ -104,7 +104,7 @@ jobs:
       # 🌐 Post live novel metrics to your Django API
       - name: Post novel metrics to app
         env:
-          APP_BASE_URL:  http://${{ secrets.EC2_HOST }}
+          APP_BASE_URL:  ${{ secrets.APP_BASE_URL }}   # 👈 changed
           BENCH_API_KEY: ${{ secrets.BENCH_API_KEY }}
           BUILD_DUR:     ${{ needs.test.outputs.build_duration }}
           TEST_DUR:      ${{ needs.test.outputs.test_duration }}
