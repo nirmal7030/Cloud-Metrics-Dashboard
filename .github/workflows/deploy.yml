@@ -104,86 +104,75 @@ jobs:
               -e BENCH_API_KEY=${{ secrets.BENCH_API_KEY }} \
               "$IMAGE"
 
-      # 🌐 Post live novel metrics to your Django API
-      - name: Post novel metrics to app
+      # 🌐 Post live novel metrics to your Django API **from inside EC2**
+      - name: Post novel metrics to app (from EC2)
+        uses: appleboy/ssh-action@v0.1.7
         env:
-          APP_BASE_URL:  ${{ secrets.APP_BASE_URL }}   # e.g. ec2-98-80-122-141.compute-1.amazonaws.com
           BENCH_API_KEY: ${{ secrets.BENCH_API_KEY }}
-          BUILD_DUR:     ${{ needs.test.outputs.build_duration }}
-          TEST_DUR:      ${{ needs.test.outputs.test_duration }}
-        run: |
-          set -e
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          # pass BENCH_API_KEY through to the remote environment
+          envs: BENCH_API_KEY
+          script: |
+            set -e
 
-          # ---- clean + normalise APP_BASE_URL like in the old workflow ----
-          RAW_URL="$APP_BASE_URL"
-          BASE_URL="$(echo "$RAW_URL" | tr -d '\"'\''[:space:]')"
+            # Durations from Stage 1 (GitHub will substitute these values)
+            BUILD_DUR=${{ needs.test.outputs.build_duration || '0' }}
+            TEST_DUR=${{ needs.test.outputs.test_duration  || '0' }}
 
-          if [ -z "$BASE_URL" ]; then
-            echo "ERROR: APP_BASE_URL secret is empty after sanitising."
-            exit 1
-          fi
+            echo "BUILD_DUR=$BUILD_DUR"
+            echo "TEST_DUR=$TEST_DUR"
 
-          case "$BASE_URL" in
-            http://*|https://*) ;;
-            *) BASE_URL="http://$BASE_URL" ;;
-          esac
+            # ----- derive novel metrics (same style as original workflow) -----
+            # LCE (Layer Cache Efficiency) – higher for faster builds
+            LCE=$(( 100 - BUILD_DUR / 2 ))
+            if [ "$LCE" -lt 0 ]; then LCE=0; fi
+            if [ "$LCE" -gt 100 ]; then LCE=100; fi
 
-          echo "Using BASE_URL=$BASE_URL (GitHub will mask the host in logs)"
+            # PRT (Pipeline Recovery Time) – here approximated with test duration
+            PRT=$TEST_DUR
 
-          # Fallbacks
-          BUILD_DUR=${BUILD_DUR:-0}
-          TEST_DUR=${TEST_DUR:-0}
+            # SMO (Secrets Management Overhead) – constant placeholder
+            SMO=1
 
-          echo "BUILD_DUR=$BUILD_DUR"
-          echo "TEST_DUR=$TEST_DUR"
+            # DEPT (Dynamic Env Provisioning Time) – tie to test duration
+            DEPT=$TEST_DUR
 
-          # ---- derive your 5 novel metrics (same spirit as the reference) ----
+            # CLBC (Cross-Layer Build Consistency) – 100 for successful pipeline
+            CLBC=100
 
-          # LCE (Layer Cache Efficiency) – higher for faster builds
-          LCE=$(( 100 - BUILD_DUR / 2 ))
-          if [ "$LCE" -lt 0 ]; then LCE=0; fi
-          if [ "$LCE" -gt 100 ]; then LCE=100; fi
+            # Optional overall score
+            VALUE=$(( (LCE + CLBC) / 2 ))
 
-          # PRT (Pipeline Recovery Time) – here we approximate with test duration
-          PRT=$TEST_DUR
+            cat > payload.json <<EOF
+            {
+              "source": "github",
+              "workflow": "Test & Deploy Cloud Metrics Dashboard to AWS EC2",
+              "run_id": "$(date +%s)",
+              "run_attempt": "1",
+              "branch": "main",
+              "commit_sha": "local-ssh",
 
-          # SMO (Secrets Management Overhead) – constant placeholder
-          SMO=1
+              "lce":  $LCE,
+              "prt":  $PRT,
+              "smo":  $SMO,
+              "dept": $DEPT,
+              "clbc": $CLBC,
 
-          # DEPT (Dynamic Env Provisioning Time) – tie to test duration for now
-          DEPT=$TEST_DUR
+              "value": $VALUE,
+              "notes": "auto-ingest of novel metrics from CI (via EC2 ssh)"
+            }
+            EOF
 
-          # CLBC (Cross-Layer Build Consistency) – 100 for successful pipeline
-          CLBC=100
+            echo "Payload to send:"
+            cat payload.json
 
-          # Optional overall score
-          VALUE=$(( (LCE + CLBC) / 2 ))
+            # Call the Django app from EC2 itself
+            curl -f -sS -X POST "http://localhost/api/metrics/ingest/" \
+              -H "Content-Type: application/json" \
+              -H "X-Bench-Key: $BENCH_API_KEY" \
+              --data @payload.json
 
-          cat > payload.json <<EOF
-          {
-            "source": "github",
-            "workflow": "${{ github.workflow }}",
-            "run_id": "${{ github.run_id }}",
-            "run_attempt": "${{ github.run_attempt }}",
-            "branch": "${{ github.ref_name }}",
-            "commit_sha": "${{ github.sha }}",
-
-            "lce":  $LCE,
-            "prt":  $PRT,
-            "smo":  $SMO,
-            "dept": $DEPT,
-            "clbc": $CLBC,
-
-            "value": $VALUE,
-            "notes": "auto-ingest of novel metrics from CI"
-          }
-          EOF
-
-          echo "Payload to send:"
-          cat payload.json
-
-          # -f so the step FAILS if ingest returns 4xx/5xx
-          curl -f -sS -X POST "$BASE_URL/api/metrics/ingest/" \
-            -H "Content-Type: application/json" \
-            -H "X-Bench-Key: $BENCH_API_KEY" \
-            --data @payload.json
+            echo "Metrics posted successfully."
