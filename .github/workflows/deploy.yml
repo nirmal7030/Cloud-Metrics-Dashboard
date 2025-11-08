@@ -65,8 +65,20 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
+
+            # Resolve registry and full image name (done by GitHub before sending to EC2)
+            REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+            IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+            # Stop & remove old container if it exists
             sudo docker stop metrics-bench || true
             sudo docker rm metrics-bench || true
-            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-            sudo docker pull ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
-            sudo docker run -d -p 80:8000 --name metrics-bench ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+
+            # Login to ECR (non-interactive, with explicit region)
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+              | sudo docker login --username AWS --password-stdin "$REGISTRY"
+
+            # Pull latest image and run container
+            sudo docker pull "$IMAGE"
+            sudo docker run -d -p 80:8000 --name metrics-bench "$IMAGE"
