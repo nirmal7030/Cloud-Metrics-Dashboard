@@ -9,92 +9,91 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import Metric
 
 
-# ---------- Dashboard HTML ----------
-def dashboard(request):
-    """Render the main security metrics dashboard."""
+# =======================
+#  UI: Dashboard page
+# =======================
+
+def dashboard_view(request):
+    """
+    Render the main dashboard UI.
+    """
     return render(request, "bench/dashboard.html")
 
 
-# ---------- API: ingest metrics from CI/CD ----------
+# Backwards compatibility for bench.ui_urls that uses `views.dashboard`
+dashboard = dashboard_view
+
+
+# =======================
+#  API: Ingest metrics
+# =======================
+
 @csrf_exempt
 def api_ingest(request):
     """
-    Receive metric data from CI/CD pipeline.
+    Receive metric data from the CI/CD pipeline and store a Metric row.
 
-    Header:
-      X-Bench-Key: <BENCH_API_KEY>
-
-    Body JSON:
-      source, workflow, run_id, run_attempt, branch, commit_sha,
-      lce, prt, smo, dept, clbc, value (optional), notes (optional)
+    This version only uses fields that exist on your current Metric model:
+        name, description, value, lce, prt, smo, dept, clbc
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
+    # --- parse JSON body safely ---
     try:
-        payload = json.loads(request.body)
+        payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+    # --- simple API key check ---
     api_key = request.headers.get("X-Bench-Key")
-    expected_key = getattr(settings, "BENCH_API_KEY", "")
-    if api_key != expected_key:
+    expected = getattr(settings, "BENCH_API_KEY", "")
+    if not expected or api_key != expected:
         return JsonResponse({"error": "Unauthorized"}, status=403)
 
-    # overall value (simple average if not provided)
-    if "value" in payload and payload["value"] is not None:
-        overall_value = float(payload["value"])
-    else:
-        parts = [
-            payload.get("lce") or 0,
-            payload.get("prt") or 0,
-            payload.get("smo") or 0,
-            payload.get("dept") or 0,
-            payload.get("clbc") or 0,
-        ]
-        overall_value = sum(parts) / 5.0 if any(parts) else 0.0
+    # --- extract metric values (default 0.0) ---
+    lce = float(payload.get("lce") or 0.0)
+    prt = float(payload.get("prt") or 0.0)
+    smo = float(payload.get("smo") or 0.0)
+    dept = float(payload.get("dept") or 0.0)
+    clbc = float(payload.get("clbc") or 0.0)
 
+    numbers = [lce, prt, smo, dept, clbc]
+    value = sum(numbers) / len(numbers) if any(numbers) else 0.0
+
+    # Human-readable name / description
+    workflow = payload.get("workflow") or ""
+    run_id = payload.get("run_id") or ""
+    source = payload.get("source") or "github"
+
+    # Example name: "github – run 123456"
+    name = payload.get("name") or f"{source} – run {run_id}".strip(" –")
+    description = payload.get("notes", "")
+
+    # --- create Metric row (only fields your model actually has) ---
     Metric.objects.create(
-        source=payload.get("source", "github"),
-        workflow=payload.get("workflow", ""),
-        run_id=payload.get("run_id", ""),
-        run_attempt=payload.get("run_attempt", ""),
-        branch=payload.get("branch", ""),
-        commit_sha=payload.get("commit_sha", ""),
-
-        name=payload.get(
-            "name",
-            f"{payload.get('source', 'github').title()} – run {payload.get('run_id', '')}"
-        ),
-        description=payload.get("notes", ""),
-
-        value=overall_value,
-        lce=payload.get("lce") or 0.0,
-        prt=payload.get("prt") or 0.0,
-        smo=payload.get("smo") or 0.0,
-        dept=payload.get("dept") or 0.0,
-        clbc=payload.get("clbc") or 0.0,
-        notes=payload.get("notes", ""),
+        name=name,
+        description=description,
+        value=value,
+        lce=lce,
+        prt=prt,
+        smo=smo,
+        dept=dept,
+        clbc=clbc,
     )
 
     return JsonResponse({"status": "stored"}, status=201)
 
 
-# ---------- API: data for dashboard ----------
+# =======================
+#  API: Metrics data for dashboard
+# =======================
+
 def api_metrics_data(request):
     """
-    Return latest metrics (optionally filtered by source)
-    in the shape your dashboard expects.
-
-    ?source=github|jenkins|codepipeline (optional)
+    Return latest metrics for the dashboard.
     """
-    source = request.GET.get("source")
-
-    qs = Metric.objects.all()
-    if source in ["github", "jenkins", "codepipeline"]:
-        qs = qs.filter(source=source)
-
-    qs = qs.order_by("created_at")  # oldest first
+    qs = Metric.objects.all().order_by("created_at")  # oldest first
 
     rows = [
         {
