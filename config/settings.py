@@ -125,3 +125,16 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+import os
+
+BENCH_API_KEY = os.environ.get("BENCH_API_KEY", "dev-bench-key-123")
+import os
+
+BENCH_API_KEY = os.environ.get("BENCH_API_KEY", "dev-bench-key-123")
+import os
+
+# Secret API key for ingesting CI/CD metrics
+BENCH_API_KEY = os.environ.get(
+    "BENCH_API_KEY",
+    "04e0ed06b167f32631b0e4664aa6e3e3dcfc3392df0396b546ff1525556d254f"
+)
