@@ -14,6 +14,7 @@ jobs:
     name: Stage 1 - Build & Test
     runs-on: ubuntu-latest
 
+    # Expose durations so deploy job can use them
     outputs:
       build_duration: ${{ steps.build_step.outputs.build_duration }}
       test_duration:  ${{ steps.test_step.outputs.test_duration }}
@@ -27,6 +28,7 @@ jobs:
         with:
           python-version: "3.10"
 
+      # ⏱️ Timed dependency install ("build" time)
       - name: Install dependencies (timed)
         id: build_step
         run: |
@@ -37,6 +39,7 @@ jobs:
           END=$(date +%s)
           echo "build_duration=$((END-START))" >> "$GITHUB_OUTPUT"
 
+      # ⏱️ Timed tests
       - name: Run Django tests (timed)
         id: test_step
         run: |
@@ -48,8 +51,8 @@ jobs:
 
   deploy:
     name: Stage 2 - Deploy to EC2
-    runs-on: ubuntu-latest
     needs: test
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout source
@@ -58,9 +61,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -68,11 +71,12 @@ jobs:
 
       - name: Build, tag, and push Docker image to ECR
         run: |
+          set -e
           docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag  $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
           docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Deploy on EC2
+      - name: Deploy on EC2 (Docker run)
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -84,18 +88,17 @@ jobs:
             REGISTRY="${{ steps.login-ecr.outputs.registry }}"
             IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
 
+            echo "Using image: $IMAGE"
+
             # Stop & remove old container if it exists
             sudo docker stop metrics-bench || true
-            sudo docker rm metrics-bench || true
+            sudo docker rm   metrics-bench || true
 
-            # Clean up unused Docker data to avoid disk-full errors
-            sudo docker system prune -af --volumes || true
-
-            # Login to ECR
+            # Login to ECR from EC2
             aws ecr get-login-password --region ${{ env.AWS_REGION }} \
               | sudo docker login --username AWS --password-stdin "$REGISTRY"
 
-            # Pull latest image and run container, passing BENCH_API_KEY into Django
+            # Pull latest image and run container with BENCH_API_KEY env
             sudo docker pull "$IMAGE"
             sudo docker run -d -p 80:8000 --name metrics-bench \
               -e BENCH_API_KEY=${{ secrets.BENCH_API_KEY }} \
@@ -104,38 +107,56 @@ jobs:
       # 🌐 Post live novel metrics to your Django API
       - name: Post novel metrics to app
         env:
-          APP_BASE_URL:  http://ec2-98-80-122-141.compute-1.amazonaws.com
+          APP_BASE_URL:  ${{ secrets.APP_BASE_URL }}   # e.g. ec2-98-80-122-141.compute-1.amazonaws.com
           BENCH_API_KEY: ${{ secrets.BENCH_API_KEY }}
           BUILD_DUR:     ${{ needs.test.outputs.build_duration }}
           TEST_DUR:      ${{ needs.test.outputs.test_duration }}
         run: |
           set -e
+
+          # ---- clean + normalise APP_BASE_URL like in the old workflow ----
+          RAW_URL="$APP_BASE_URL"
+          BASE_URL="$(echo "$RAW_URL" | tr -d '\"'\''[:space:]')"
+
+          if [ -z "$BASE_URL" ]; then
+            echo "ERROR: APP_BASE_URL secret is empty after sanitising."
+            exit 1
+          fi
+
+          case "$BASE_URL" in
+            http://*|https://*) ;;
+            *) BASE_URL="http://$BASE_URL" ;;
+          esac
+
+          echo "Using BASE_URL=$BASE_URL (GitHub will mask the host in logs)"
+
+          # Fallbacks
           BUILD_DUR=${BUILD_DUR:-0}
           TEST_DUR=${TEST_DUR:-0}
 
-          echo "Build duration: $BUILD_DUR seconds"
-          echo "Test duration:  $TEST_DUR seconds"
+          echo "BUILD_DUR=$BUILD_DUR"
+          echo "TEST_DUR=$TEST_DUR"
 
-          # Wait for app to be ready on EC2 (health-check loop)
-          echo "Waiting for API to become ready..."
-          for i in {1..10}; do
-            if curl -sSf "$APP_BASE_URL/api/health/" > /dev/null; then
-              echo "API is up ✅"
-              break
-            fi
-            echo "API not ready yet (attempt $i/10), retrying in 5s..."
-            sleep 5
-          done
+          # ---- derive your 5 novel metrics (same spirit as the reference) ----
 
-          # --- Derive your novel metrics (simple heuristic) ---
+          # LCE (Layer Cache Efficiency) – higher for faster builds
           LCE=$(( 100 - BUILD_DUR / 2 ))
           if [ "$LCE" -lt 0 ]; then LCE=0; fi
           if [ "$LCE" -gt 100 ]; then LCE=100; fi
 
+          # PRT (Pipeline Recovery Time) – here we approximate with test duration
           PRT=$TEST_DUR
+
+          # SMO (Secrets Management Overhead) – constant placeholder
           SMO=1
+
+          # DEPT (Dynamic Env Provisioning Time) – tie to test duration for now
           DEPT=$TEST_DUR
+
+          # CLBC (Cross-Layer Build Consistency) – 100 for successful pipeline
           CLBC=100
+
+          # Optional overall score
           VALUE=$(( (LCE + CLBC) / 2 ))
 
           cat > payload.json <<EOF
@@ -158,10 +179,11 @@ jobs:
           }
           EOF
 
-          echo "Posting payload to $APP_BASE_URL/api/metrics/ingest/ ..."
+          echo "Payload to send:"
           cat payload.json
 
-          curl -v -X POST "$APP_BASE_URL/api/metrics/ingest/" \
+          # -f so the step FAILS if ingest returns 4xx/5xx
+          curl -f -sS -X POST "$BASE_URL/api/metrics/ingest/" \
             -H "Content-Type: application/json" \
             -H "X-Bench-Key: $BENCH_API_KEY" \
             --data @payload.json
